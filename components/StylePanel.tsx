@@ -96,7 +96,12 @@ export function StylePanel({
                   style={{
                     // Swatch is generated from the preset's real colors, so it
                     // always previews what the preset actually produces.
-                    background: `linear-gradient(135deg, ${p.swatch[0]}, ${p.swatch[1]})`,
+                    backgroundImage: `linear-gradient(135deg, ${p.swatch[0]}, ${p.swatch[1]})`,
+                    // Stop the gradient at the inner edge. Painted to the
+                    // border box it bleeds its raw endpoint colors through the
+                    // transparent border, which reads as a stray outline and
+                    // competes with the real selection ring.
+                    backgroundClip: "padding-box",
                   }}
                 />
                 <span
