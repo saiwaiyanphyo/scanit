@@ -322,16 +322,7 @@ export function QRStudio() {
       </div>
 
       <footer className="border-t border-[var(--border)] px-4 py-4 text-center text-xs text-[var(--text-secondary)]">
-        Built with Next.js and{" "}
-        <a
-          href="https://github.com/soldair/node-qrcode"
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-2 hover:text-[var(--text)]"
-        >
-          qrcode
-        </a>
-        . Static codes — no tracking, no redirects, no expiry.
+        Built with ❤️ by Sai Wai Yan &amp; Claude
       </footer>
     </div>
   );
