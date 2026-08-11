@@ -129,5 +129,7 @@ The budgets in [`lib/verify.ts`](lib/verify.ts) were instead calibrated by decod
 logo sizes across every error-correction level and QR version. Measured limits land closer to
 **4–17% of modules** depending on level and code size, and the thresholds are deliberately
 conservative — they warn slightly early rather than let a broken code through.
+
 ---
+
 Make with Love <3 and claude
