@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { encodePayload, emptyPayload, type PayloadState } from "@/lib/payload";
-import { defaultStyle, presets, type StyleOptions } from "@/lib/presets";
+import { defaultStyle, type StyleOptions } from "@/lib/presets";
 import { renderQR, svgToPng } from "@/lib/qr";
 import { logoTooLarge, verifyScannable, type VerifyStatus } from "@/lib/verify";
+import { Header } from "./Header";
+import { Clipboard, Download } from "./Icons";
 import { PayloadForm } from "./PayloadForm";
+import { Advisory, QRCard, StatusBadge } from "./Preview";
 import { StylePanel } from "./StylePanel";
-import { Section, Segmented } from "./ui";
+import { Button, SegmentedTrack } from "./ui";
 
 const EXPORT_SIZES = [256, 512, 1024, 2048];
 
@@ -38,8 +41,7 @@ function contrastRatio(a: string, b: string): number | null {
 
 /**
  * Advice about conditions the live decode check can't see: print, distance,
- * dim light, and older scanners. The decode check answers "does this work
- * right now"; these answer "will it still work on a poster".
+ * dim light, and older scanners.
  */
 function checkScannability(
   style: StyleOptions,
@@ -57,8 +59,6 @@ function checkScannability(
       .map((c) => contrastRatio(c, style.background))
       .filter((r): r is number => r !== null)
       .reduce((min, r) => Math.min(min, r), Infinity);
-    // 2.5:1 is roughly where decoding starts to get unreliable off-screen.
-    // Legitimate bright palettes sit around 2.8:1, so don't cry wolf there.
     if (worst !== Infinity && worst < 2.5) {
       tips.push(
         `Contrast between the dots and the background is only ${worst.toFixed(1)}:1 — darken the dots before printing.`,
@@ -90,42 +90,6 @@ function checkScannability(
   return tips;
 }
 
-function ScanBadge({ status }: { status: VerifyStatus }) {
-  if (status === "idle") return null;
-
-  const styles: Record<Exclude<VerifyStatus, "idle">, { cls: string; text: string }> = {
-    checking: {
-      cls: "border-[var(--color-line)] text-[var(--color-muted)]",
-      text: "Checking scannability…",
-    },
-    pass: {
-      cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-      text: "Verified — decodes correctly",
-    },
-    fail: {
-      cls: "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400",
-      text: "Failed to decode — adjust the design",
-    },
-    unsupported: {
-      cls: "border-[var(--color-line)] text-[var(--color-muted)]",
-      text: "Auto-check unavailable in this browser",
-    },
-  };
-
-  const { cls, text } = styles[status];
-  return (
-    <div
-      role="status"
-      className={`mx-auto flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${cls}`}
-    >
-      <span aria-hidden className="text-[10px]">
-        {status === "pass" ? "●" : status === "fail" ? "▲" : "○"}
-      </span>
-      {text}
-    </div>
-  );
-}
-
 export function QRStudio() {
   const [payload, setPayload] = useState<PayloadState>(emptyPayload);
   const [style, setStyle] = useState<StyleOptions>(defaultStyle);
@@ -133,10 +97,14 @@ export function QRStudio() {
   const [exportSize, setExportSize] = useState(1024);
   const [tab, setTab] = useState<"content" | "design">("content");
   const [copied, setCopied] = useState(false);
+  const [canShare, setCanShare] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => {
-    if (copyTimer.current) clearTimeout(copyTimer.current);
+  useEffect(() => {
+    setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function");
+    return () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
   }, []);
 
   const data = useMemo(() => encodePayload(payload), [payload]);
@@ -157,13 +125,11 @@ export function QRStudio() {
     }
   }, [data, style, logo]);
 
-  const warnings = useMemo(
+  const tips = useMemo(
     () => checkScannability(style, moduleCount, excavatedFraction),
     [style, moduleCount, excavatedFraction],
   );
 
-  // Decode the rendered code back to confirm it still reads. Debounced so
-  // dragging a slider doesn't queue up a detector run per frame.
   const [verified, setVerified] = useState<VerifyStatus>("idle");
   useEffect(() => {
     if (!svg) {
@@ -197,6 +163,16 @@ export function QRStudio() {
     }
   }, []);
 
+  const applyPreset = useCallback(
+    (next: StyleOptions) => setStyle(logo ? { ...next, errorLevel: "H" } : next),
+    [logo],
+  );
+
+  const reset = useCallback(() => {
+    setStyle(defaultStyle);
+    setLogo(null);
+  }, []);
+
   const download = useCallback(
     async (format: "png" | "svg") => {
       if (!svg) return;
@@ -213,211 +189,150 @@ export function QRStudio() {
     [svg, exportSize, filename],
   );
 
+  const pngBlob = useCallback(async () => {
+    if (!svg) return null;
+    const dataUrl = await svgToPng(svg, exportSize);
+    return (await fetch(dataUrl)).blob();
+  }, [svg, exportSize]);
+
   const copyPng = useCallback(async () => {
-    if (!svg) return;
     try {
-      const dataUrl = await svgToPng(svg, exportSize);
-      const blob = await (await fetch(dataUrl)).blob();
+      const blob = await pngBlob();
+      if (!blob) return;
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       setCopied(true);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard image writes are unsupported in some browsers; the download
-      // button is always available as a fallback.
+      // Clipboard image writes are unsupported in some browsers; download
+      // remains available as a fallback.
     }
-  }, [svg, exportSize]);
+  }, [pngBlob]);
+
+  const share = useCallback(async () => {
+    try {
+      const blob = await pngBlob();
+      if (!blob) return;
+      const file = new File([blob], `${filename}.png`, { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "QR code" });
+      }
+    } catch {
+      // User dismissed the share sheet, or the platform refused the payload.
+    }
+  }, [pngBlob, filename]);
+
+  const heading =
+    tab === "content"
+      ? { title: "Configure your QR code", sub: "Choose content type, enter your data, and export." }
+      : { title: "Customize appearance", sub: "Style shapes, colors, logo, and error correction." };
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Scan<span className="text-[var(--color-accent)]">It</span>
-          </h1>
-          <p className="mt-1 text-sm text-[var(--color-muted)]">
-            Customizable QR codes. Everything runs in your browser — nothing is uploaded.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            setStyle(defaultStyle);
-            handleLogoChange(null);
-          }}
-          className="rounded-lg border border-[var(--color-line)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)]"
-        >
-          Reset design
-        </button>
-      </header>
+    <div className="flex min-h-screen flex-col">
+      <Header onReset={reset} onShare={share} canShare={canShare} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="flex flex-1 flex-col lg:flex-row">
         {/* Preview */}
-        <div className="lg:order-2">
-          <div className="lg:sticky lg:top-8 space-y-4">
-            <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
-              <div className="checkerboard flex aspect-square items-center justify-center overflow-hidden rounded-lg">
-                {svg ? (
-                  <div
-                    className="h-full w-full [&>svg]:h-full [&>svg]:w-full"
-                    // The SVG is generated locally from user input by renderSVG,
-                    // which escapes every interpolated value.
-                    dangerouslySetInnerHTML={{ __html: svg }}
-                  />
-                ) : (
-                  <p className="max-w-[240px] px-6 text-center text-sm text-[var(--color-muted)]">
-                    {error ?? "Fill in the content on the left to generate your code."}
-                  </p>
-                )}
-              </div>
+        <div className="border-b border-[var(--border)] bg-[var(--qr-preview-bg)] p-6 lg:w-[42%] lg:max-w-[560px] lg:border-r lg:border-b-0 lg:p-10">
+          <div className="flex flex-col items-center gap-5 lg:sticky lg:top-10">
+            <QRCard
+              svg={svg}
+              transparent={style.transparentBackground}
+              background={style.background}
+              message={error}
+            />
 
-              {data && !error ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-center text-xs text-[var(--color-muted)]">
-                    {data.length} characters · {moduleCount}×{moduleCount} modules · level{" "}
-                    {style.errorLevel}
-                  </p>
-                  <ScanBadge status={verified} />
-                </div>
-              ) : null}
-            </div>
-
-            {warnings.length > 0 && svg ? (
-              <div
-                className={`rounded-xl border p-3 ${
-                  verified === "fail"
-                    ? "border-red-500/30 bg-red-500/10"
-                    : "border-amber-500/30 bg-amber-500/10"
-                }`}
-              >
-                <p
-                  className={`mb-1 text-xs font-semibold ${
-                    verified === "fail"
-                      ? "text-red-700 dark:text-red-400"
-                      : "text-amber-700 dark:text-amber-400"
-                  }`}
-                >
-                  {verified === "fail" ? "Likely causes" : "Before you print"}
+            {svg ? (
+              <>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  {data.length} chars · {moduleCount}×{moduleCount} · Level {style.errorLevel}
                 </p>
-                <ul
-                  className={`space-y-1 text-xs ${
-                    verified === "fail"
-                      ? "text-red-800 dark:text-red-200/90"
-                      : "text-amber-800 dark:text-amber-200/90"
-                  }`}
-                >
-                  {warnings.map((w) => (
-                    <li key={w}>· {w}</li>
-                  ))}
-                </ul>
-              </div>
+                <StatusBadge status={verified} />
+              </>
             ) : null}
 
-            <Section title="Export">
-              <Segmented
-                label="PNG size"
-                value={String(exportSize)}
-                options={EXPORT_SIZES.map((s) => ({ value: String(s), label: `${s}` }))}
-                onChange={(v) => setExportSize(Number(v))}
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled={!svg}
-                  onClick={() => download("png")}
-                  className="rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Download PNG
-                </button>
-                <button
-                  type="button"
-                  disabled={!svg}
-                  onClick={() => download("svg")}
-                  className="rounded-lg border border-[var(--color-line)] px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-canvas)] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Download SVG
-                </button>
+            {svg && tips.length > 0 ? (
+              <div className="w-full max-w-[360px]">
+                <Advisory
+                  tone={verified === "fail" ? "error" : "amber"}
+                  title={verified === "fail" ? "Likely causes" : "Before you print"}
+                  items={tips}
+                />
               </div>
-              <button
-                type="button"
-                disabled={!svg}
-                onClick={copyPng}
-                className="w-full rounded-lg border border-[var(--color-line)] px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-canvas)] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {copied ? "Copied to clipboard" : "Copy image"}
-              </button>
-            </Section>
+            ) : null}
           </div>
         </div>
 
         {/* Controls */}
-        <div className="space-y-4 lg:order-1">
-          <Segmented
-            value={tab}
-            options={[
-              { value: "content" as const, label: "Content" },
-              { value: "design" as const, label: "Design" },
-            ]}
-            onChange={setTab}
-          />
+        <div className="flex-1 px-4 py-6 pb-16 sm:px-8 lg:px-10 lg:py-10">
+          <div className="mx-auto max-w-[720px] space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">{heading.title}</h1>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">{heading.sub}</p>
+            </div>
 
-          {tab === "content" ? (
-            <Section title="What should this code do?">
-              <PayloadForm value={payload} onChange={setPayload} />
-            </Section>
-          ) : (
-            <>
-              <Section title="Presets">
-                <div className="grid grid-cols-4 gap-2">
-                  {presets.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      title={p.name}
-                      onClick={() =>
-                        setStyle(
-                          // Keep the high error correction a logo depends on.
-                          logo ? { ...p.style, errorLevel: "H" } : p.style,
-                        )
-                      }
-                      className="group flex flex-col items-center gap-1.5 rounded-lg border border-[var(--color-line)] p-2 transition-colors hover:border-[var(--color-accent)]"
-                    >
-                      <span
-                        className="h-8 w-8 rounded-md border border-black/5"
-                        style={{
-                          background: `linear-gradient(135deg, ${p.swatch[0]}, ${p.swatch[1]})`,
-                        }}
-                      />
-                      <span className="text-[10px] font-medium text-[var(--color-muted)] group-hover:text-[var(--color-ink)]">
-                        {p.name}
-                      </span>
-                    </button>
-                  ))}
+            <SegmentedTrack
+              value={tab}
+              options={[
+                { value: "content" as const, label: "Content" },
+                { value: "design" as const, label: "Design" },
+              ]}
+              onChange={setTab}
+            />
+
+            {tab === "content" ? (
+              <>
+                <PayloadForm value={payload} onChange={setPayload} />
+
+                <div className="space-y-3 border-t border-[var(--border)] pt-6">
+                  <SegmentedTrack
+                    label="Export"
+                    help="Pixel size of the exported PNG. SVG is resolution-independent."
+                    value={String(exportSize)}
+                    options={EXPORT_SIZES.map((s) => ({ value: String(s), label: String(s) }))}
+                    onChange={(v) => setExportSize(Number(v))}
+                  />
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <Button variant="primary" disabled={!svg} onClick={() => download("png")}>
+                      <Download className="h-4 w-4" />
+                      PNG
+                    </Button>
+                    <Button disabled={!svg} onClick={() => download("svg")}>
+                      <Download className="h-4 w-4" />
+                      SVG
+                    </Button>
+                    <Button disabled={!svg} onClick={copyPng}>
+                      <Clipboard className="h-4 w-4" />
+                      {copied ? "Copied" : "Copy"}
+                    </Button>
+                  </div>
                 </div>
-              </Section>
+              </>
+            ) : (
               <StylePanel
                 style={style}
                 onChange={setStyle}
                 logo={logo}
                 onLogoChange={handleLogoChange}
+                onPreset={applyPreset}
               />
-            </>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
-      <footer className="mt-12 border-t border-[var(--color-line)] pt-6 text-center text-xs text-[var(--color-muted)]">
+      <footer className="border-t border-[var(--border)] px-4 py-4 text-center text-xs text-[var(--text-secondary)]">
         Built with Next.js and{" "}
         <a
           href="https://github.com/soldair/node-qrcode"
           target="_blank"
           rel="noreferrer"
-          className="underline underline-offset-2 hover:text-[var(--color-ink)]"
+          className="underline underline-offset-2 hover:text-[var(--text)]"
         >
           qrcode
         </a>
         . Static codes — no tracking, no redirects, no expiry.
       </footer>
-    </main>
+    </div>
   );
 }

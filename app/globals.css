@@ -1,97 +1,207 @@
 @import "tailwindcss";
 
-@theme {
-  --color-surface: #ffffff;
-  --color-canvas: #f6f7f9;
-  --color-line: #e5e7eb;
-  --color-ink: #0f172a;
-  --color-muted: #64748b;
-  --color-accent: #4f46e5;
-}
-
+/* Tokens mirror the .pen variable set. Light values are the base; dark is
+   applied either by the OS preference or by an explicit data-theme override. */
 :root {
-  color-scheme: light dark;
+  --bg: #faf7f0;
+  --bg-surface: #ffffff;
+  --bg-muted: #f4f4f5;
+  --bg-accent: #7c3aed;
+  --bg-accent-subtle: #ede9fe;
+  --text: #18181b;
+  --text-secondary: #71717a;
+  --text-on-accent: #ffffff;
+  --border: #e4e4e7;
+  --border-focus: #7c3aed;
+  --success: #16a34a;
+  --success-bg: #f0fdf4;
+  --amber: #d97706;
+  --amber-bg: #fffbeb;
+  --error: #dc2626;
+  --error-bg: #fef2f2;
+  --qr-preview-bg: #f4f4f5;
+  --tooltip-bg: #18181b;
+  --tooltip-text: #fafafa;
+
+  /* The QR's own paper. Deliberately theme-independent — it represents the
+     user's chosen background color, not an app surface. */
+  --qr-card-bg: #ffffff;
+
+  color-scheme: light;
 }
 
+/* OS preference, unless the user has explicitly chosen light. */
 @media (prefers-color-scheme: dark) {
-  @theme {
-    --color-surface: #111318;
-    --color-canvas: #0a0b0e;
-    --color-line: #262a33;
-    --color-ink: #e8eaee;
-    --color-muted: #8b93a3;
-    --color-accent: #818cf8;
+  :root:not([data-theme="light"]) {
+    --bg: #1c1a17;
+    --bg-surface: #18181b;
+    --bg-muted: #27272a;
+    --bg-accent: #8b5cf6;
+    --bg-accent-subtle: #2e1065;
+    --text: #fafafa;
+    --text-secondary: #a1a1aa;
+    --border: #27272a;
+    --border-focus: #8b5cf6;
+    --success: #22c55e;
+    --success-bg: #052e16;
+    --amber: #f59e0b;
+    --amber-bg: #451a03;
+    --error: #f87171;
+    --error-bg: #450a0a;
+    --qr-preview-bg: #27272a;
+    --tooltip-bg: #fafafa;
+    --tooltip-text: #18181b;
+    color-scheme: dark;
   }
+}
+
+/* Explicit override always wins. */
+:root[data-theme="dark"] {
+  --bg: #1c1a17;
+  --bg-surface: #18181b;
+  --bg-muted: #27272a;
+  --bg-accent: #8b5cf6;
+  --bg-accent-subtle: #2e1065;
+  --text: #fafafa;
+  --text-secondary: #a1a1aa;
+  --border: #27272a;
+  --border-focus: #8b5cf6;
+  --success: #22c55e;
+  --success-bg: #052e16;
+  --amber: #f59e0b;
+  --amber-bg: #451a03;
+  --error: #f87171;
+  --error-bg: #450a0a;
+  --qr-preview-bg: #27272a;
+  --tooltip-bg: #fafafa;
+  --tooltip-text: #18181b;
+  color-scheme: dark;
 }
 
 html,
 body {
-  background: var(--color-canvas);
-  color: var(--color-ink);
+  background: var(--bg);
+  color: var(--text);
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Compact, consistent form controls across the whole panel. */
-.field {
+/* ---- Shared control styling ----------------------------------------
+   These live in the components layer so Tailwind utilities applied on the
+   same element (flex, gap, width…) still win. Unlayered rules would beat
+   every utility and silently break the composed components. */
+@layer components {
+  .label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .field {
   width: 100%;
-  border-radius: 0.5rem;
-  border: 1px solid var(--color-line);
-  background: var(--color-surface);
-  padding: 0.5rem 0.625rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  padding: 0.625rem 0.75rem;
   font-size: 0.875rem;
-  color: var(--color-ink);
+  color: var(--text);
   outline: none;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
-.field:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+.field::placeholder {
+  color: var(--text-secondary);
 }
 
-.label {
-  display: block;
-  margin-bottom: 0.3rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-muted);
+.field:focus-visible,
+.field:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
 }
+
+/* Pill rows use fewer columns on narrow screens — at five across on a phone,
+   labels like "Diamond" overflow their pill. */
+.pill-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols-sm), minmax(0, 1fr));
+}
+
+@media (min-width: 640px) {
+  .pill-grid {
+    grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  }
+}
+
+/* One consistent focus ring for every custom control. */
+.focusable:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
+}
+} /* end @layer components */
 
 input[type="range"] {
   width: 100%;
-  accent-color: var(--color-accent);
+  height: 6px;
+  border-radius: 999px;
+  appearance: none;
+  background: var(--bg-muted);
+  outline: none;
 }
 
-input[type="color"] {
-  padding: 0;
-  border: 1px solid var(--color-line);
-  border-radius: 0.5rem;
-  background: transparent;
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  border: 2px solid var(--bg-accent);
+  cursor: pointer;
+  transition: box-shadow 120ms ease;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  border: 2px solid var(--bg-accent);
   cursor: pointer;
 }
 
-input[type="color"]::-webkit-color-swatch-wrapper {
-  padding: 3px;
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 25%, transparent);
 }
 
-input[type="color"]::-webkit-color-swatch {
-  border: none;
-  border-radius: 0.3rem;
-}
-
-/* Checkerboard behind the preview so transparent backgrounds are visible. */
+/* Checkerboard for transparent backgrounds. The container clips it to the
+   card's rounded corners, so partial tiles at the edge never escape. */
 .checkerboard {
   background-image:
-    linear-gradient(45deg, color-mix(in srgb, var(--color-muted) 18%, transparent) 25%, transparent 25%),
-    linear-gradient(-45deg, color-mix(in srgb, var(--color-muted) 18%, transparent) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--color-muted) 18%, transparent) 75%),
-    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--color-muted) 18%, transparent) 75%);
+    linear-gradient(45deg, color-mix(in srgb, var(--text-secondary) 20%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--text-secondary) 20%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--text-secondary) 20%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--text-secondary) 20%, transparent) 75%);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
 }
